@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>THE FLOOR IS LAVA: RISE OF THE INFERNO</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- TITLE SCREEN -->
+  <div id="title-screen">
+    <div id="ember-container"></div>
+    <div id="title-content">
+      <div id="title-subtitle">A VOLCANIC SURVIVAL EXPERIENCE</div>
+      <h1 id="title-main">
+        <span class="title-word" id="word-the">THE</span>
+        <span class="title-word" id="word-floor">FLOOR</span>
+        <span class="title-word" id="word-is">IS</span>
+        <span class="title-word title-lava" id="word-lava">LAVA</span>
+      </h1>
+      <div id="title-rise">RISE OF THE INFERNO</div>
+      <div id="title-buttons">
+        <button id="btn-start" class="arcade-btn">INSERT COIN</button>
+        <button id="btn-howto" class="arcade-btn secondary">HOW TO PLAY</button>
+      </div>
+      <div id="title-highscore">HIGH SCORE: <span id="title-hs">0</span></div>
+    </div>
+    <div id="title-lava-pool"></div>
+  </div>
+
+  <!-- HOW TO PLAY SCREEN -->
+  <div id="howto-screen" class="hidden">
+    <div class="screen-panel">
+      <h2 class="panel-title">HOW TO PLAY</h2>
+      <div class="howto-grid">
+        <div class="howto-section">
+          <h3>CONTROLS</h3>
+          <div class="control-row"><span class="key">← →</span><span>Move</span></div>
+          <div class="control-row"><span class="key">A D</span><span>Move</span></div>
+          <div class="control-row"><span class="key">SPACE / W / ↑</span><span>Jump</span></div>
+          <div class="control-row"><span class="key">Double Tap</span><span>Double Jump</span></div>
+          <div class="control-row"><span class="key">Wall + Jump</span><span>Wall Jump</span></div>
+        </div>
+        <div class="howto-section">
+          <h3>POWER-UPS</h3>
+          <div class="powerup-row"><span class="pu-icon shield">🛡</span><span>Shield — survive one lava hit</span></div>
+          <div class="powerup-row"><span class="pu-icon speed">⚡</span><span>Speed Boost — move faster</span></div>
+          <div class="powerup-row"><span class="pu-icon gem">💎</span><span>Gem — bonus points</span></div>
+        </div>
+        <div class="howto-section">
+          <h3>PLATFORMS</h3>
+          <div class="plat-row"><span class="plat-chip solid"></span><span>Solid — safe</span></div>
+          <div class="plat-row"><span class="plat-chip moving"></span><span>Moving — slides back and forth</span></div>
+          <div class="plat-row"><span class="plat-chip crumble"></span><span>Crumbling — breaks after landing</span></div>
+        </div>
+        <div class="howto-section">
+          <h3>TIPS</h3>
+          <ul class="tips-list">
+            <li>Lava rises faster over time</li>
+            <li>Chain risky jumps for combo score</li>
+            <li>Watch for fireballs from below</li>
+            <li>Difficulty spikes every 30 seconds</li>
+          </ul>
+        </div>
+      </div>
+      <button id="btn-back" class="arcade-btn secondary">BACK</button>
+    </div>
+  </div>
+
+  <!-- GAME CANVAS -->
+  <canvas id="game-canvas" class="hidden"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-left">
+      <div id="hud-score">SCORE <span id="score-val">0</span></div>
+      <div id="hud-combo" class="hidden">COMBO x<span id="combo-val">1</span></div>
+    </div>
+    <div id="hud-center">
+      <div id="hud-level">LEVEL <span id="level-val">1</span></div>
+    </div>
+    <div id="hud-right">
+      <div id="hud-hi">HI <span id="hi-val">0</span></div>
+      <div id="hud-powerups">
+        <span id="pu-shield" class="pu-indicator hidden">🛡</span>
+        <span id="pu-speed" class="pu-indicator hidden">⚡</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- DANGER WARNING -->
+  <div id="danger-warning" class="hidden">⚠ DANGER ⚠</div>
+
+  <!-- PAUSE OVERLAY -->
+  <div id="pause-overlay" class="hidden">
+    <div class="screen-panel compact">
+      <h2 class="panel-title">PAUSED</h2>
+      <button id="btn-resume" class="arcade-btn">RESUME</button>
+      <button id="btn-quit" class="arcade-btn secondary">QUIT</button>
+    </div>
+  </div>
+
+  <!-- GAME OVER SCREEN -->
+  <div id="gameover-screen" class="hidden">
+    <div class="screen-panel">
+      <h2 class="panel-title glow-red">CONSUMED BY LAVA</h2>
+      <div class="go-stats">
+        <div class="go-stat"><span class="go-label">SCORE</span><span id="go-score" class="go-val">0</span></div>
+        <div class="go-stat"><span class="go-label">HIGH SCORE</span><span id="go-hi" class="go-val">0</span></div>
+        <div class="go-stat"><span class="go-label">LEVEL</span><span id="go-level" class="go-val">1</span></div>
+        <div class="go-stat"><span class="go-label">MAX COMBO</span><span id="go-combo" class="go-val">x1</span></div>
+      </div>
+      <div id="new-record" class="hidden">NEW RECORD!</div>
+      <div class="go-buttons">
+        <button id="btn-restart" class="arcade-btn">PLAY AGAIN</button>
+        <button id="btn-menu" class="arcade-btn secondary">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOBILE CONTROLS -->
+  <div id="mobile-controls" class="hidden">
+    <button id="btn-left" class="mob-btn">◀</button>
+    <button id="btn-jump" class="mob-btn jump-btn">▲</button>
+    <button id="btn-right" class="mob-btn">▶</button>
+  </div>
+
+  <!-- PAUSE BUTTON (mobile) -->
+  <button id="btn-pause" class="hidden">II</button>
+
+  <script src="script.js"></script>
+</body>
+</html>
