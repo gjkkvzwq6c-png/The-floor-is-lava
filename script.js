@@ -19,6 +19,7 @@ const CANVAS_W       = 480;    // logical width
 const FRICTION       = 0.82;
 const CRUMBLE_DELAY  = 400;    // ms before crumble starts
 const FIREBALL_INTERVAL_BASE = 3500; // ms
+const ROCKET_BOOST       = -30;   // upward velocity from rocket pad
 
 // ─── State ───────────────────────────────────────────────────
 let canvas, ctx;
@@ -358,6 +359,34 @@ function sfxCrumble() {
   src.start();
 }
 
+function sfxRocket() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Rising whoosh tone
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(90, t);
+  osc.frequency.exponentialRampToValueAtTime(2200, t + 0.45);
+  g.gain.setValueAtTime(0.22, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + 0.5);
+  // Noise blast
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.35, audioCtx.sampleRate);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = audioCtx.createBufferSource();
+  const hp  = audioCtx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 800;
+  const ng  = audioCtx.createGain();
+  ng.gain.setValueAtTime(0.18, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  src.buffer = buf;
+  src.connect(hp); hp.connect(ng); ng.connect(audioCtx.destination);
+  src.start(t);
+}
+
 function sfxFireball() {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
@@ -415,6 +444,9 @@ function createPlatform(x, worldY, w, type) {
     crumbleTimer: 0,
     opacity: 1,
     active: true,
+    // rocket
+    hasRocket: false,
+    rocketFired: false,
   };
 }
 
@@ -500,7 +532,10 @@ function generateNextPlatform() {
   if (level >= 2 && r < 0.25) type = 'moving';
   if (level >= 3 && r < 0.15) type = 'crumble';
 
-  platforms.push(createPlatform(x, newY, w, type));
+  const pl = createPlatform(x, newY, w, type);
+  // ~18% of non-crumble platforms get a rocket pad
+  if (type !== 'crumble' && Math.random() < 0.18) pl.hasRocket = true;
+  platforms.push(pl);
   highestPlatformY = newY;
 
   // Occasionally add a gem or power-up on top
@@ -598,6 +633,22 @@ function updatePlayer(dt) {
         pl.crumbling = true;
         pl.crumbleTimer = CRUMBLE_DELAY;
         sfxCrumble();
+      }
+
+      // Rocket launch — blasts player upward with a big boost
+      if (pl.hasRocket && !pl.rocketFired) {
+        pl.rocketFired = true;
+        p.vy = ROCKET_BOOST;
+        p.onGround = false;
+        p.jumpsLeft = 2;
+        sfxRocket();
+        screenShake.dur = 300;
+        // Exhaust blast downward from the rocket pad
+        spawnParticles(p.x + p.w/2, p.y + p.h, 28, '#ff6600',
+          { angle: Math.PI/2, spread: 0.8, speed: 10, gravity: 0.25, r: 5 });
+        spawnParticles(p.x + p.w/2, p.y + p.h, 14, '#ffee00',
+          { angle: Math.PI/2, spread: 0.5, speed: 16, gravity: 0.3, r: 3 });
+        floatingText(p.x + p.w/2, p.y - 14, 'ROCKET!', '#ffee00');
       }
 
       // Combo: if lava very close, reward risky jump
@@ -1117,6 +1168,103 @@ function drawPlatform(pl) {
     ctx.lineTo(bx, sy + pl.h - 2);
     ctx.stroke();
   }
+
+  ctx.restore();
+
+  // Draw rocket pad on top of platform (after restore so opacity doesn't affect it)
+  if (pl.hasRocket) drawRocketPad(pl.x + pl.w / 2, sy, pl.rocketFired);
+}
+
+function drawRocketPad(cx, platformSy, fired) {
+  const t = Date.now() / 1000;
+  ctx.save();
+  ctx.translate(cx, platformSy); // origin at centre-top of platform
+
+  if (fired) {
+    // Scorch mark left behind
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = '#220800';
+    ctx.beginPath();
+    ctx.ellipse(0, -1, 10, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // ── Exhaust flame (animated) ──
+  const flicker = 0.7 + Math.sin(t * 18) * 0.3;
+  ctx.globalAlpha = 0.85 * flicker;
+  const flameGrad = ctx.createRadialGradient(0, 4, 0, 0, 4, 10 * flicker);
+  flameGrad.addColorStop(0, '#ffffff');
+  flameGrad.addColorStop(0.3, '#ffee00');
+  flameGrad.addColorStop(0.7, '#ff5500');
+  flameGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = flameGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 6 * flicker, 10 * flicker, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 1;
+
+  // ── Fins (two triangles at base) ──
+  ctx.fillStyle = '#cc3300';
+  // Left fin
+  ctx.beginPath();
+  ctx.moveTo(-5, -2);
+  ctx.lineTo(-12, 4);
+  ctx.lineTo(-5, -10);
+  ctx.closePath();
+  ctx.fill();
+  // Right fin
+  ctx.beginPath();
+  ctx.moveTo(5, -2);
+  ctx.lineTo(12, 4);
+  ctx.lineTo(5, -10);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── Rocket body ──
+  const bodyGrad = ctx.createLinearGradient(-5, -28, 5, -28);
+  bodyGrad.addColorStop(0, '#ff6633');
+  bodyGrad.addColorStop(0.5, '#ffcc44');
+  bodyGrad.addColorStop(1, '#ff4400');
+  ctx.fillStyle = bodyGrad;
+  // Cylinder body
+  ctx.beginPath();
+  ctx.rect(-5, -26, 10, 22);
+  ctx.fill();
+  ctx.strokeStyle = '#ff8800';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // ── Nose cone ──
+  ctx.fillStyle = '#ffee88';
+  ctx.beginPath();
+  ctx.moveTo(0, -38);
+  ctx.lineTo(-5, -26);
+  ctx.lineTo(5, -26);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── Window ──
+  ctx.fillStyle = '#88eeff';
+  ctx.shadowColor = '#00ccff';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(0, -19, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // ── Glow halo ──
+  ctx.globalAlpha = 0.22 + Math.sin(t * 4) * 0.08;
+  ctx.shadowColor = '#ffaa00';
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = '#ffaa00';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, -18, 10, 22, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 }
