@@ -14,7 +14,7 @@ const WALL_JUMP_Y    = -12;
 const MOVE_SPEED     = 5.5;
 const SPEED_BOOST    = 9;
 const PLATFORM_H     = 14;
-const LAVA_RISE_BASE = 0.18;   // px per frame at level 1
+const LAVA_RISE_BASE = 1.1;    // px per frame at level 1 — always threatening
 const CANVAS_W       = 480;    // logical width
 const FRICTION       = 0.82;
 const CRUMBLE_DELAY  = 400;    // ms before crumble starts
@@ -489,7 +489,7 @@ function generateInitialPlatforms() {
 }
 
 function generateNextPlatform() {
-  const gapY = 90 + Math.random() * 60;  // vertical gap between platforms
+  const gapY = 70 + Math.random() * 45;  // vertical gap — tight enough to always be reachable
   const newY  = highestPlatformY - gapY;
   const w     = Math.max(60, 140 - level * 6 - Math.random() * 40);
   const x     = Math.random() * (CANVAS_W - w - 20) + 10;
@@ -531,11 +531,11 @@ function initGame() {
   player.x = sp.x + sp.w/2 - player.w/2;
   player.y = sp.y - player.h;
 
-  // Camera: world Y of top of screen = player.y - CANVAS_H*0.4
-  cameraY = player.y - canvas.height * 0.4;
+  // Camera: place player near the bottom third of the screen
+  cameraY = player.y - canvas.height * 0.7;
 
-  // Lava starts well below the screen
-  lavaY = cameraY + canvas.height + 100;
+  // Lava starts right at the bottom of the screen — immediately visible and rising
+  lavaY = cameraY + canvas.height - 10;
 
   updateScoreDisplay();
   updateHUD();
@@ -650,9 +650,14 @@ function updateLava(dt) {
 }
 
 function updateCamera(dt) {
-  // Target: keep player in upper 40% of screen
-  const targetCamY = player.y - canvas.height * 0.4;
-  // Only scroll up (camera Y decreases as player goes higher)
+  const risePerFrame = lavaRise * (dt / 16.67);
+
+  // Camera always scrolls upward with the lava — this is the core pressure mechanic.
+  // Platforms continuously scroll past; standing still means falling into lava.
+  cameraY -= risePerFrame;
+
+  // Also snap toward the player if they jump above the 62% mark on screen
+  const targetCamY = player.y - canvas.height * 0.62;
   if (targetCamY < cameraY) {
     cameraY += (targetCamY - cameraY) * 0.1;
   }
@@ -804,8 +809,10 @@ function hitPlayer() {
 
 // ─── Lava touch detection ────────────────────────────────────
 function checkLavaDeath() {
-  if (player.y + player.h >= lavaY) {
-    if (player.hasShield) {
+  // Die if touching lava surface OR if scrolled off the bottom of the screen
+  const fellOffScreen = player.y > cameraY + canvas.height + player.h;
+  if (player.y + player.h >= lavaY || fellOffScreen) {
+    if (player.hasShield && !fellOffScreen) {
       hitPlayer();
       player.y = lavaY - player.h - 2;
       player.vy = JUMP_FORCE * 1.1;
@@ -831,7 +838,7 @@ function updateScore(dt) {
   if (levelTimer >= 30000) {
     levelTimer = 0;
     level++;
-    lavaRise = LAVA_RISE_BASE + (level - 1) * 0.07;
+    lavaRise = LAVA_RISE_BASE + (level - 1) * 0.15;
     updateMusicIntensity();
     screenShake.dur = 600;
     floatingText(CANVAS_W/2 - 40, player.y - 60, `LEVEL ${level}!`, '#ff8800');
@@ -853,16 +860,15 @@ function updateScoreDisplay() { updateHUD(); }
 
 // ─── Danger detection ────────────────────────────────────────
 function updateDanger() {
+  // Lava is always at the bottom — danger vignette intensity scales with how close it is
   const lavaScreenY = lavaY - cameraY;
-  const nearDanger = lavaScreenY > canvas.height * 0.65;
+  const nearDanger  = lavaScreenY > canvas.height * 0.5;
   if (nearDanger && !dangerMode) {
     dangerMode = true;
     document.getElementById('danger-warning').classList.remove('hidden');
-    startAlarm();
   } else if (!nearDanger && dangerMode) {
     dangerMode = false;
     document.getElementById('danger-warning').classList.add('hidden');
-    stopAlarm();
   }
 }
 
