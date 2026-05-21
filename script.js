@@ -56,10 +56,216 @@ function resumeAudio() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-/* ── Background music disabled ──────────────────────────── */
-function startMusic() {}
-function updateMusicIntensity() {}
-function stopMusic() {}
+/* ── Rock & Roll background music (Web Audio API) ────────── */
+function startMusic() {
+  if (musicStarted || !audioCtx) return;
+  musicStarted = true;
+
+  const master = audioCtx.createGain();
+  master.gain.value = 0.12; // soft background level
+  master.connect(audioCtx.destination);
+  musicNodes.master = master;
+
+  const BPM   = 128;
+  const beat  = 60 / BPM;   // seconds per beat
+  const bar   = beat * 4;   // seconds per 4-beat bar
+
+  // Shared noise buffer for drums (2 seconds of white noise)
+  const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+  const noiseData = noiseBuf.getChannelData(0);
+  for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
+
+  // Waveshaper distortion curve for electric guitar
+  function makeDistCurve(amount) {
+    const n = 512, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+    }
+    return curve;
+  }
+
+  // ── Drum voices ───────────────────────────────────────────
+  function kick(t) {
+    const osc = audioCtx.createOscillator();
+    const g   = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, t);
+    osc.frequency.exponentialRampToValueAtTime(38, t + 0.07);
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+    osc.connect(g); g.connect(master);
+    osc.start(t); osc.stop(t + 0.35);
+  }
+
+  function snare(t) {
+    // Noise burst
+    const src = audioCtx.createBufferSource();
+    src.buffer = noiseBuf;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.6;
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.55, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    src.connect(bp); bp.connect(ng); ng.connect(master);
+    src.start(t); src.stop(t + 0.2);
+    // Crack tone underneath
+    const osc = audioCtx.createOscillator();
+    const og  = audioCtx.createGain();
+    osc.type = 'triangle'; osc.frequency.value = 200;
+    og.gain.setValueAtTime(0.18, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    osc.connect(og); og.connect(master);
+    osc.start(t); osc.stop(t + 0.08);
+  }
+
+  function hihat(t, open) {
+    const src = audioCtx.createBufferSource();
+    src.buffer = noiseBuf;
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 8500;
+    const g = audioCtx.createGain();
+    const decay = open ? 0.22 : 0.04;
+    g.gain.setValueAtTime(open ? 0.15 : 0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+    src.connect(hp); hp.connect(g); g.connect(master);
+    src.start(t); src.stop(t + decay + 0.02);
+  }
+
+  // ── Bass guitar ───────────────────────────────────────────
+  function bass(freq, t, dur) {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 550;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.65, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
+    osc.connect(lp); lp.connect(g); g.connect(master);
+    osc.start(t); osc.stop(t + dur);
+  }
+
+  // ── Distorted guitar (power chord: root + 5th + octave) ───
+  function guitar(rootHz, t, dur, vol) {
+    const ws = audioCtx.createWaveShaper();
+    ws.curve = makeDistCurve(280);
+    ws.oversample = '4x';
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 3200;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    ws.connect(lp); lp.connect(g); g.connect(master);
+    [rootHz, rootHz * 1.498, rootHz * 2].forEach(f => {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sawtooth'; osc.frequency.value = f;
+      osc.connect(ws);
+      osc.start(t); osc.stop(t + dur + 0.05);
+    });
+  }
+
+  // ── Lead riff note (single picked note) ───────────────────
+  function riff(freq, t, dur) {
+    const ws = audioCtx.createWaveShaper();
+    ws.curve = makeDistCurve(180);
+    ws.oversample = '2x';
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 4500;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.9);
+    ws.connect(lp); lp.connect(g); g.connect(master);
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth'; osc.frequency.value = freq;
+    osc.connect(ws);
+    osc.start(t); osc.stop(t + dur);
+  }
+
+  // ── Song data ─────────────────────────────────────────────
+  // Classic rock key of E  (E2=82.41, A2=110, B2=123.47, D2=73.42)
+  const E = 82.41, A = 110.00, B = 123.47, D2 = 73.42;
+
+  // 4-bar chord loop: E | E | A | B
+  const chords = [E, E, A, B];
+
+  // Bass walking line per chord (4 quarter notes each bar)
+  const bassLines = [
+    [E,      E*1.19, E*1.498, E*1.26],  // E bar  — E G# B Ab-ish
+    [E,      E*1.19, E*1.498, E*1.26],  // E bar
+    [A,      A*1.12, A*1.25,  A*1.5 ],  // A bar  — A B C# E
+    [B,      B*1.12, B*1.25,  B*1.5 ],  // B bar  — B C# D# F#
+  ];
+
+  // Pentatonic E riff (8th notes, played over E bars)
+  // E3=164.81, G3=196, A3=220, B3=246.94, D4=293.66
+  const E3=164.81, G3=196, A3=220, B3=246.94, D4=293.66;
+  const riffPattern = [
+    [E3, 0],   [E3, 0.5], [G3, 1.0],
+    [A3, 1.5], [E3, 2.0], [D4, 2.5],
+    [E3, 3.0], [D4, 3.5],
+  ];
+
+  // ── Scheduler ─────────────────────────────────────────────
+  let barStart = audioCtx.currentTime + 0.05;
+  let barIdx   = 0;
+
+  function scheduleBar() {
+    if (!musicStarted) return;
+    const t   = barStart;
+    const ci  = barIdx % 4;
+    const chord = chords[ci];
+
+    // Rock drum beat: kick 1 & 3, snare 2 & 4, 8th hi-hats
+    kick(t);
+    kick(t + beat * 2);
+    kick(t + beat * 2.75);   // syncopated kick for extra drive
+    snare(t + beat);
+    snare(t + beat * 3);
+    for (let i = 0; i < 8; i++) {
+      hihat(t + i * beat * 0.5, i === 5); // open hat on the "and" of 3
+    }
+
+    // Bass line
+    bassLines[ci].forEach((hz, i) => bass(hz, t + beat * i, beat * 0.82));
+
+    // Guitar: riff on E bars, power chord stabs on A and B bars
+    if (ci === 0 || ci === 1) {
+      riffPattern.forEach(([hz, offset]) => riff(hz, t + beat * offset, beat * 0.42));
+      // Rhythm chug under the riff
+      guitar(E, t,            beat * 0.4, 0.18);
+      guitar(E, t + beat * 2, beat * 0.4, 0.18);
+    } else {
+      // Chord stabs: downstroke on 1, upstroke "&2", downstroke on 3, 4
+      guitar(chord, t,                beat * 0.35, 0.28);
+      guitar(chord, t + beat * 0.5,  beat * 0.25, 0.18);
+      guitar(chord, t + beat * 2,    beat * 0.35, 0.28);
+      guitar(chord, t + beat * 3,    beat * 0.8,  0.22);
+    }
+
+    barStart += bar;
+    barIdx++;
+    // Re-schedule just before the next bar starts
+    musicNodes.scheduleTimeout = setTimeout(scheduleBar, (bar - 0.08) * 1000);
+  }
+
+  scheduleBar();
+}
+
+function updateMusicIntensity() {} // intensity handled passively
+
+function stopMusic() {
+  if (!musicStarted) return;
+  musicStarted = false;
+  clearTimeout(musicNodes.scheduleTimeout);
+  if (musicNodes.master) {
+    try {
+      musicNodes.master.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
+      setTimeout(() => { try { musicNodes.master.disconnect(); } catch (e) {} }, 500);
+    } catch (e) {}
+  }
+  musicNodes = {};
+}
 
 /* ── Sound effects ──────────────────────────────────────── */
 function sfxJump(double_j = false) {
