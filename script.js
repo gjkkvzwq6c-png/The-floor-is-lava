@@ -167,35 +167,8 @@ function sfxFireball() {
   osc.start(t); osc.stop(t + 0.3);
 }
 
-function startAlarm() {
-  if (!audioCtx || alarmOsc) return;
-  alarmOsc = audioCtx.createOscillator();
-  alarmGain = audioCtx.createGain();
-  alarmOsc.type = 'square';
-  alarmOsc.frequency.value = 880;
-  alarmGain.gain.value = 0;
-  alarmOsc.connect(alarmGain);
-  alarmGain.connect(audioCtx.destination);
-  alarmOsc.start();
-  let up = true;
-  alarmOsc._interval = setInterval(() => {
-    if (!alarmGain) return;
-    const t = audioCtx.currentTime;
-    alarmGain.gain.linearRampToValueAtTime(up ? 0.06 : 0.001, t + 0.15);
-    alarmOsc.frequency.setValueAtTime(up ? 880 : 660, t);
-    up = !up;
-  }, 300);
-}
-
-function stopAlarm() {
-  if (!alarmOsc) return;
-  clearInterval(alarmOsc._interval);
-  try { alarmGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1); } catch(e){}
-  setTimeout(() => {
-    try { alarmOsc.stop(); alarmOsc.disconnect(); alarmGain.disconnect(); } catch(e){}
-    alarmOsc = null; alarmGain = null;
-  }, 150);
-}
+function startAlarm() {}
+function stopAlarm() {}
 
 // ─── Player ──────────────────────────────────────────────────
 function createPlayer() {
