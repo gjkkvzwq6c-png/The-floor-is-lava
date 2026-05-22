@@ -1042,13 +1042,8 @@ function updateDanger() {
   // Lava is always at the bottom — danger vignette intensity scales with how close it is
   const lavaScreenY = lavaY - cameraY;
   const nearDanger  = lavaScreenY > canvas.height * 0.5;
-  if (nearDanger && !dangerMode) {
-    dangerMode = true;
-    document.getElementById('danger-warning').classList.remove('hidden');
-  } else if (!nearDanger && dangerMode) {
-    dangerMode = false;
-    document.getElementById('danger-warning').classList.add('hidden');
-  }
+  if (nearDanger && !dangerMode)       dangerMode = true;
+  else if (!nearDanger && dangerMode)  dangerMode = false;
 }
 
 // ─── Smoke ambiance ──────────────────────────────────────────
@@ -1688,7 +1683,6 @@ function showScreen(name) {
   document.getElementById('pause-overlay').classList.add('hidden');
   document.getElementById('mobile-controls').classList.add('hidden');
   document.getElementById('btn-pause').classList.add('hidden');
-  document.getElementById('danger-warning').classList.add('hidden');
 
   if (name === 'title') {
     document.getElementById('title-screen').classList.remove('hidden');
