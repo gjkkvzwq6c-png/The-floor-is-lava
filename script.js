@@ -402,6 +402,48 @@ function sfxFireball() {
   osc.start(t); osc.stop(t + 0.3);
 }
 
+function sfxMuscles() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Deep power thud
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(55, t);
+  osc.frequency.exponentialRampToValueAtTime(110, t + 0.3);
+  g.gain.setValueAtTime(0.28, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + 0.5);
+  // Heroic ascending notes
+  [220, 330, 440, 660].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    const gg = audioCtx.createGain();
+    o.type = 'square';
+    const tt = t + i * 0.07;
+    o.frequency.value = freq;
+    gg.gain.setValueAtTime(0.1, tt);
+    gg.gain.exponentialRampToValueAtTime(0.001, tt + 0.18);
+    o.connect(gg); gg.connect(audioCtx.destination);
+    o.start(tt); o.stop(tt + 0.2);
+  });
+}
+
+function sfxMusclesLost() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Deflating descend
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(440, t);
+  osc.frequency.exponentialRampToValueAtTime(50, t + 0.7);
+  g.gain.setValueAtTime(0.2, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + 0.75);
+}
+
 function startAlarm() {}
 function stopAlarm() {}
 
@@ -421,6 +463,7 @@ function createPlayer() {
     shieldTimer: 0,
     hasSpeed: false,
     speedTimer: 0,
+    hasMuscles: false,
     trail: [],        // for speed trail effect
     invincible: 0,    // frames of invincibility after hit
   };
@@ -543,7 +586,8 @@ function generateNextPlatform() {
     gems.push(createGem(x + w/2 - 8, newY - 26));
   }
   if (Math.random() < 0.08) {
-    const kind = Math.random() < .5 ? 'shield' : 'speed';
+    const roll = Math.random();
+    const kind = roll < 0.38 ? 'shield' : roll < 0.76 ? 'speed' : 'muscles';
     powerups.push(createPowerup(x + w/2 - 11, newY - 36, kind));
   }
 }
@@ -785,20 +829,29 @@ function updateCollectibles(dt) {
         player.shieldTimer = 8000;
         document.getElementById('pu-shield').classList.remove('hidden');
         floatingText(pu.x, pu.y, 'SHIELD!', '#00ccff');
-      } else {
+        spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 14, '#00ccff', { spread: Math.PI*2, speed: 4 });
+      } else if (pu.kind === 'speed') {
         player.hasSpeed = true;
         player.speedTimer = 5000;
         document.getElementById('pu-speed').classList.remove('hidden');
         floatingText(pu.x, pu.y, 'SPEED!', '#aaff00');
+        spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 14, '#aaff00', { spread: Math.PI*2, speed: 4 });
+      } else if (pu.kind === 'muscles') {
+        player.hasMuscles = true;
+        sfxMuscles();
+        document.getElementById('pu-muscles').classList.remove('hidden');
+        floatingText(pu.x, pu.y, 'SWOLE MODE!', '#ff2244');
+        spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 22, '#ff2244', { spread: Math.PI*2, speed: 5, r: 5 });
+        spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 12, '#ffaa00', { spread: Math.PI*2, speed: 3, r: 3 });
       }
-      spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 14, pu.kind === 'shield' ? '#00ccff' : '#aaff00', { spread: Math.PI*2, speed: 4 });
     }
   });
   powerups = powerups.filter(pu => !pu.collected && pu.y < lavaY + 50);
 
   // Update HUD powerup indicators
-  if (!player.hasShield) document.getElementById('pu-shield').classList.add('hidden');
-  if (!player.hasSpeed) document.getElementById('pu-speed').classList.add('hidden');
+  if (!player.hasShield)  document.getElementById('pu-shield').classList.add('hidden');
+  if (!player.hasSpeed)   document.getElementById('pu-speed').classList.add('hidden');
+  if (!player.hasMuscles) document.getElementById('pu-muscles').classList.add('hidden');
 }
 
 // ─── Floating text ───────────────────────────────────────────
@@ -845,8 +898,19 @@ function updateFireballs(dt) {
   fireballs = fireballs.filter(fb => fb.active && fb.y > cameraY - 100 && fb.y < lavaY + 200);
 }
 
+function loseMusclePower() {
+  player.hasMuscles = false;
+  player.invincible = 2000;
+  sfxMusclesLost();
+  screenShake.dur = 550;
+  spawnParticles(player.x + player.w/2, player.y + player.h/2, 30, '#ff2244', { spread: Math.PI*2, speed: 7, r: 6 });
+  spawnParticles(player.x + player.w/2, player.y + player.h/2, 16, '#ffaa00', { spread: Math.PI*2, speed: 4, r: 4 });
+  floatingText(player.x + player.w/2, player.y - 24, 'MUSCLES GONE!', '#ff2244');
+}
+
 function hitPlayer() {
   if (player.invincible > 0) return;
+  if (player.hasMuscles) { loseMusclePower(); return; }
   if (player.hasShield) {
     player.hasShield = false;
     player.invincible = 1500;
@@ -860,10 +924,14 @@ function hitPlayer() {
 
 // ─── Lava touch detection ────────────────────────────────────
 function checkLavaDeath() {
-  // Die if touching lava surface OR if scrolled off the bottom of the screen
   const fellOffScreen = player.y > cameraY + canvas.height + player.h;
   if (player.y + player.h >= lavaY || fellOffScreen) {
-    if (player.hasShield && !fellOffScreen) {
+    if (fellOffScreen) { triggerGameOver(); return; }
+    if (player.hasMuscles) {
+      loseMusclePower();
+      player.y = lavaY - player.h - 2;
+      player.vy = JUMP_FORCE * 1.3; // muscles bounce you high off lava
+    } else if (player.hasShield) {
       hitPlayer();
       player.y = lavaY - player.h - 2;
       player.vy = JUMP_FORCE * 1.1;
@@ -1291,32 +1359,31 @@ function drawGem(ctx, r) {
 }
 
 function drawPowerup(ctx, kind, r) {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   if (kind === 'shield') {
-    ctx.shadowColor = '#00ccff';
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = '#00ccff';
+    ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 18;
     ctx.font = `${r * 2}px serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     ctx.fillText('🛡', 0, 0);
-  } else {
-    ctx.shadowColor = '#aaff00';
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = '#aaff00';
+  } else if (kind === 'speed') {
+    ctx.shadowColor = '#aaff00'; ctx.shadowBlur = 18;
     ctx.font = `${r * 2}px serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     ctx.fillText('⚡', 0, 0);
+  } else if (kind === 'muscles') {
+    ctx.shadowColor = '#ff2244'; ctx.shadowBlur = 22;
+    ctx.font = `${r * 2.2}px serif`;
+    ctx.fillText('💪', 0, 0);
   }
   ctx.shadowBlur = 0;
 }
 
 function drawPlayer() {
-  const p = player;
+  const p  = player;
   const sy = p.y - cameraY;
+  const t  = Date.now() / 1000;
 
   // Speed trail
-  p.trail.forEach((tr, i) => {
+  p.trail.forEach(tr => {
     const tsy = tr.y - cameraY;
     ctx.globalAlpha = tr.life * 0.35;
     ctx.fillStyle = '#aaff00';
@@ -1324,9 +1391,24 @@ function drawPlayer() {
   });
   ctx.globalAlpha = 1;
 
+  // Muscles power aura
+  if (p.hasMuscles) {
+    const pulse = (Math.sin(t * 4) + 1) / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.3 + pulse * 0.25;
+    ctx.shadowColor = '#ff1133';
+    ctx.shadowBlur = 28;
+    ctx.strokeStyle = '#ff3355';
+    ctx.lineWidth = 3 + pulse * 3;
+    ctx.beginPath();
+    ctx.ellipse(p.x + p.w/2, sy + p.h/2, p.w/2 + 20, p.h/2 + 16, 0, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // Shield aura
   if (p.hasShield) {
-    const pulse = (Math.sin(Date.now() / 120) + 1) / 2;
+    const pulse = (Math.sin(t * 8) + 1) / 2;
     ctx.save();
     ctx.globalAlpha = 0.25 + pulse * 0.2;
     ctx.strokeStyle = '#00ccff';
@@ -1340,14 +1422,22 @@ function drawPlayer() {
   }
 
   // Invincibility flash
-  if (p.invincible > 0 && Math.floor(Date.now() / 80) % 2 === 0) {
+  if (p.invincible > 0 && Math.floor(t * 12.5) % 2 === 0) {
     ctx.globalAlpha = 0.3;
   }
 
-  // Body
+  // Draw muscle arms behind body so they appear to extend outward
+  if (p.hasMuscles) drawMuscleArms(p.x, sy, p.w, p.h, t);
+
+  // Body colour
   const bodyGrad = ctx.createLinearGradient(p.x, sy, p.x + p.w, sy + p.h);
-  bodyGrad.addColorStop(0, p.hasSpeed ? '#aaff00' : '#ff8844');
-  bodyGrad.addColorStop(1, p.hasSpeed ? '#558800' : '#cc4400');
+  if (p.hasSpeed) {
+    bodyGrad.addColorStop(0, '#aaff00'); bodyGrad.addColorStop(1, '#558800');
+  } else if (p.hasMuscles) {
+    bodyGrad.addColorStop(0, '#cc1122'); bodyGrad.addColorStop(1, '#770011');
+  } else {
+    bodyGrad.addColorStop(0, '#ff8844'); bodyGrad.addColorStop(1, '#cc4400');
+  }
   ctx.fillStyle = bodyGrad;
 
   // Rounded body
@@ -1355,15 +1445,13 @@ function drawPlayer() {
   ctx.beginPath();
   roundRect(ctx, p.x, sy, p.w, p.h, 6);
   ctx.fill();
-
-  // Suit lines
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
 
   // Visor
-  ctx.fillStyle = '#88eeff';
+  ctx.fillStyle = p.hasMuscles ? '#ff8888' : '#88eeff';
   ctx.globalAlpha = 0.9;
   ctx.save();
   roundRect(ctx, p.x + p.w * 0.15, sy + p.h * 0.12, p.w * 0.7, p.h * 0.28, 4);
@@ -1373,9 +1461,10 @@ function drawPlayer() {
   // Jetpack glow when moving up
   if (p.vy < -2) {
     ctx.globalAlpha = 0.6;
+    const color = p.hasMuscles ? '#ff2244' : '#ff8800';
     const jGrad = ctx.createRadialGradient(p.x + p.w/2, sy + p.h, 0, p.x + p.w/2, sy + p.h, 14);
     jGrad.addColorStop(0, '#ffffff');
-    jGrad.addColorStop(0.4, '#ff8800');
+    jGrad.addColorStop(0.4, color);
     jGrad.addColorStop(1, 'transparent');
     ctx.fillStyle = jGrad;
     ctx.beginPath();
@@ -1384,6 +1473,58 @@ function drawPlayer() {
   }
 
   ctx.globalAlpha = 1;
+}
+
+function drawMuscleArms(px, psy, pw, ph, t) {
+  const flex = Math.sin(t * 5) * 0.12; // subtle flex animation
+  ctx.save();
+
+  // ── Left arm ──
+  // Upper arm
+  ctx.fillStyle = '#bb1020';
+  ctx.beginPath();
+  ctx.ellipse(px - 9, psy + ph * 0.38 + flex * 4, 8, 13, -0.25 + flex, 0, Math.PI * 2);
+  ctx.fill();
+  // Bicep peak
+  ctx.fillStyle = '#ee1133';
+  ctx.beginPath();
+  ctx.arc(px - 14, psy + ph * 0.27 + flex * 6, 7, 0, Math.PI * 2);
+  ctx.fill();
+  // Forearm
+  ctx.fillStyle = '#991010';
+  ctx.beginPath();
+  ctx.ellipse(px - 7, psy + ph * 0.62, 5, 9, 0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Right arm ──
+  ctx.fillStyle = '#bb1020';
+  ctx.beginPath();
+  ctx.ellipse(px + pw + 9, psy + ph * 0.38 + flex * 4, 8, 13, 0.25 - flex, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ee1133';
+  ctx.beginPath();
+  ctx.arc(px + pw + 14, psy + ph * 0.27 + flex * 6, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#991010';
+  ctx.beginPath();
+  ctx.ellipse(px + pw + 7, psy + ph * 0.62, 5, 9, -0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Vein details ──
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = '#ff6677';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(px - 15, psy + ph * 0.22);
+  ctx.quadraticCurveTo(px - 18, psy + ph * 0.4, px - 13, psy + ph * 0.58);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px + pw + 15, psy + ph * 0.22);
+  ctx.quadraticCurveTo(px + pw + 18, psy + ph * 0.4, px + pw + 13, psy + ph * 0.58);
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 function roundRect(ctx, x, y, w, h, r) {
