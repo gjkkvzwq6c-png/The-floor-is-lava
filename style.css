@@ -310,6 +310,11 @@ html, body {
   color: var(--lava);
   text-shadow: 0 0 8px var(--neon);
 }
+#hud-lives {
+  font-size: 1rem;
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px #ff4466;
+}
 #hud-hi {
   font-size: .85rem;
   letter-spacing: 2px;

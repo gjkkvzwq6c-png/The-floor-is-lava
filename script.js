@@ -25,6 +25,7 @@ const ROCKET_BOOST       = -30;   // upward velocity from rocket pad
 let canvas, ctx;
 let gameState = 'title'; // title | playing | paused | gameover
 let score = 0, hiScore = 0, combo = 1, maxCombo = 1;
+let lives = 3;
 let level = 1, levelTimer = 0;
 let lavaY = 0, lavaRise = LAVA_RISE_BASE;
 let lastTime = 0, deltaTime = 0;
@@ -654,7 +655,8 @@ function generateNextPlatform() {
 
 // ─── Initialize game ─────────────────────────────────────────
 function initGame() {
-  score = 0; combo = 1; maxCombo = 1; level = 1; levelTimer = 0; gameTime = 0;
+  score = 0; combo = 1; maxCombo = 1; lives = 3;
+  level = 1; levelTimer = 0; gameTime = 0;
   comboTimer = 0; fireballTimer = 0;
   lavaRise = LAVA_RISE_BASE;
   particles = []; smokeParticles = []; fireballs = []; powerups = []; gems = [];
@@ -887,8 +889,9 @@ function updateCollectibles(dt) {
       if (pu.kind === 'shield') {
         player.hasShield = true;
         player.shieldTimer = 8000;
+        lives++;
         document.getElementById('pu-shield').classList.remove('hidden');
-        floatingText(pu.x, pu.y, 'SHIELD!', '#00ccff');
+        floatingText(pu.x, pu.y, 'SHIELD + 1UP!', '#00ccff');
         spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 14, '#00ccff', { spread: Math.PI*2, speed: 4 });
       } else if (pu.kind === 'speed') {
         player.hasSpeed = true;
@@ -898,9 +901,10 @@ function updateCollectibles(dt) {
         spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 14, '#aaff00', { spread: Math.PI*2, speed: 4 });
       } else if (pu.kind === 'muscles') {
         player.hasMuscles = true;
+        lives++;
         sfxMuscles();
         document.getElementById('pu-muscles').classList.remove('hidden');
-        floatingText(pu.x, pu.y, 'SWOLE MODE!', '#ff2244');
+        floatingText(pu.x, pu.y, 'SWOLE + 1UP!', '#ff2244');
         spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 22, '#ff2244', { spread: Math.PI*2, speed: 5, r: 5 });
         spawnParticles(pu.x + pu.w/2, pu.y + pu.h/2, 12, '#ffaa00', { spread: Math.PI*2, speed: 3, r: 3 });
       }
@@ -1030,6 +1034,7 @@ function updateHUD() {
   document.getElementById('level-val').textContent  = level;
   document.getElementById('hi-val').textContent     = Math.max(hiScore, Math.floor(score));
   document.getElementById('combo-val').textContent  = combo;
+  document.getElementById('lives-val').textContent  = '❤'.repeat(Math.max(0, lives)) || '☠';
   const comboEl = document.getElementById('hud-combo');
   if (combo > 1) comboEl.classList.remove('hidden');
   else comboEl.classList.add('hidden');
@@ -1070,9 +1075,51 @@ function updateParticles(dt) {
   floatingTexts.splice(0, floatingTexts.length, ...floatingTexts.filter(ft => ft.life > 0));
 }
 
+// ─── Respawn after spending a life ───────────────────────────
+function respawnPlayer() {
+  // Find a safe platform above the lava to land on
+  const safe = platforms
+    .filter(pl => pl.active && pl.y < lavaY - 50 && pl.y > lavaY - canvas.height * 0.7)
+    .sort((a, b) => b.y - a.y); // lowest safe platform first
+
+  if (safe.length > 0) {
+    const pl = safe[0];
+    player.x = pl.x + pl.w / 2 - player.w / 2;
+    player.y = pl.y - player.h;
+  } else {
+    // Fallback: place player above lava in the centre
+    player.x = CANVAS_W / 2 - player.w / 2;
+    player.y = lavaY - canvas.height * 0.45;
+  }
+
+  player.vx = 0;
+  player.vy = JUMP_FORCE; // small bounce upward on spawn
+  player.onGround  = false;
+  player.jumpsLeft = 2;
+  player.invincible = 2500; // 2.5 s of invincibility
+
+  screenShake.dur = 350;
+  spawnParticles(player.x + player.w/2, player.y + player.h/2, 24, '#ffff44',
+    { spread: Math.PI*2, speed: 5, r: 4 });
+  floatingText(player.x + player.w/2, player.y - 34,
+    lives === 1 ? 'LAST LIFE!' : `${lives} LIVES LEFT`, '#ffff44');
+}
+
 // ─── Game over ───────────────────────────────────────────────
 function triggerGameOver() {
   if (gameState !== 'playing') return;
+
+  // Spend a life instead of ending if any remain
+  if (lives > 0) {
+    lives--;
+    spawnParticles(player.x + player.w/2, player.y + player.h/2, 18, '#ff4400',
+      { spread: Math.PI*2, speed: 5, r: 4 });
+    screenShake.dur = 300;
+    respawnPlayer();
+    updateHUD();
+    return;
+  }
+
   gameState = 'gameover';
   sfxGameOver();
   stopAlarm();
