@@ -57,154 +57,215 @@ function resumeAudio() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-/* ── Rock & Roll background music (Web Audio API) ────────── */
+/* ── Epic Rock & Roll — electric guitar (Web Audio API) ───── */
 function startMusic() {
   if (musicStarted || !audioCtx) return;
   musicStarted = true;
 
+  // Master gain → compressor → output
   const master = audioCtx.createGain();
-  master.gain.value = 0.12; // soft background level
-  master.connect(audioCtx.destination);
+  master.gain.value = 0.13;
+  const comp = audioCtx.createDynamicsCompressor();
+  comp.threshold.value = -16;
+  comp.knee.value      = 8;
+  comp.ratio.value     = 5;
+  comp.attack.value    = 0.003;
+  comp.release.value   = 0.2;
+  master.connect(comp);
+  comp.connect(audioCtx.destination);
   musicNodes.master = master;
 
-  const BPM   = 128;
-  const beat  = 60 / BPM;   // seconds per beat
-  const bar   = beat * 4;   // seconds per 4-beat bar
+  const BPM  = 140;             // driving rock tempo
+  const beat = 60 / BPM;
+  const bar  = beat * 4;
 
-  // Shared noise buffer for drums (2 seconds of white noise)
+  // 2-second white-noise buffer shared by all drum voices
   const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
-  const noiseData = noiseBuf.getChannelData(0);
-  for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
+  const nd = noiseBuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
 
-  // Waveshaper distortion curve for electric guitar
-  function makeDistCurve(amount) {
-    const n = 512, curve = new Float32Array(n);
+  // Tube-amp soft-clipping (tanh saturation — smoother than hard clip)
+  function tanhCurve(gain) {
+    const n = 1024, c = new Float32Array(n), th = Math.tanh(gain);
     for (let i = 0; i < n; i++) {
       const x = (i * 2) / n - 1;
-      curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+      c[i] = Math.tanh(x * gain) / th;
     }
-    return curve;
+    return c;
   }
+
+  // Pre-built curves (reuse to save allocations)
+  const heavyCurve = tanhCurve(7);   // rhythm guitar — thick saturation
+  const leadCurve  = tanhCurve(4.5); // lead guitar  — singing tone
 
   // ── Drum voices ───────────────────────────────────────────
   function kick(t) {
+    // Sub-bass body
     const osc = audioCtx.createOscillator();
     const g   = audioCtx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(160, t);
-    osc.frequency.exponentialRampToValueAtTime(38, t + 0.07);
-    g.gain.setValueAtTime(0.9, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+    osc.frequency.setValueAtTime(200, t);
+    osc.frequency.exponentialRampToValueAtTime(35, t + 0.07);
+    g.gain.setValueAtTime(1.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
     osc.connect(g); g.connect(master);
-    osc.start(t); osc.stop(t + 0.35);
+    osc.start(t); osc.stop(t + 0.4);
+    // Click transient for punch
+    const ck = audioCtx.createOscillator();
+    const cg = audioCtx.createGain();
+    ck.type = 'triangle'; ck.frequency.value = 1100;
+    cg.gain.setValueAtTime(0.35, t);
+    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+    ck.connect(cg); cg.connect(master);
+    ck.start(t); ck.stop(t + 0.015);
   }
 
   function snare(t) {
-    // Noise burst
+    // Noisy body
     const src = audioCtx.createBufferSource();
     src.buffer = noiseBuf;
     const bp = audioCtx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.6;
+    bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 0.7;
     const ng = audioCtx.createGain();
-    ng.gain.setValueAtTime(0.55, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    ng.gain.setValueAtTime(0.65, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
     src.connect(bp); bp.connect(ng); ng.connect(master);
-    src.start(t); src.stop(t + 0.2);
-    // Crack tone underneath
+    src.start(t); src.stop(t + 0.18);
+    // Tight tone snap
     const osc = audioCtx.createOscillator();
     const og  = audioCtx.createGain();
-    osc.type = 'triangle'; osc.frequency.value = 200;
-    og.gain.setValueAtTime(0.18, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    osc.type = 'triangle'; osc.frequency.value = 250;
+    og.gain.setValueAtTime(0.28, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
     osc.connect(og); og.connect(master);
-    osc.start(t); osc.stop(t + 0.08);
+    osc.start(t); osc.stop(t + 0.06);
   }
 
   function hihat(t, open) {
     const src = audioCtx.createBufferSource();
     src.buffer = noiseBuf;
     const hp = audioCtx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 8500;
-    const g = audioCtx.createGain();
-    const decay = open ? 0.22 : 0.04;
-    g.gain.setValueAtTime(open ? 0.15 : 0.1, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+    hp.type = 'highpass'; hp.frequency.value = 9500;
+    const g  = audioCtx.createGain();
+    const dc = open ? 0.28 : 0.032;
+    g.gain.setValueAtTime(open ? 0.14 : 0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dc);
     src.connect(hp); hp.connect(g); g.connect(master);
-    src.start(t); src.stop(t + decay + 0.02);
+    src.start(t); src.stop(t + dc + 0.01);
   }
 
-  // ── Bass guitar ───────────────────────────────────────────
+  function crash(t) {
+    const src = audioCtx.createBufferSource();
+    src.buffer = noiseBuf;
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 4500;
+    const g  = audioCtx.createGain();
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+    src.connect(hp); hp.connect(g); g.connect(master);
+    src.start(t); src.stop(t + 1.45);
+  }
+
+  // ── Bass guitar (overdriven, tight low-pass) ──────────────
   function bass(freq, t, dur) {
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = freq;
-    const lp = audioCtx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 550;
-    const g = audioCtx.createGain();
-    g.gain.setValueAtTime(0.65, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
-    osc.connect(lp); lp.connect(g); g.connect(master);
+    const osc  = audioCtx.createOscillator();
+    osc.type = 'sawtooth'; osc.frequency.value = freq;
+    const dist = audioCtx.createWaveShaper();
+    dist.curve = tanhCurve(3);
+    const lp   = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 450;
+    const g    = audioCtx.createGain();
+    g.gain.setValueAtTime(0.6, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.88);
+    osc.connect(dist); dist.connect(lp); lp.connect(g); g.connect(master);
     osc.start(t); osc.stop(t + dur);
   }
 
-  // ── Distorted guitar (power chord: root + 5th + octave) ───
+  // ── Electric rhythm guitar ────────────────────────────────
+  // Power chord (root + perfect 5th) through tube-amp saturation.
+  // 3 detuned oscillators per note (±5 cents) create the chorus
+  // thickness of a real double-tracked guitar.
   function guitar(rootHz, t, dur, vol) {
     const ws = audioCtx.createWaveShaper();
-    ws.curve = makeDistCurve(280);
-    ws.oversample = '4x';
-    const lp = audioCtx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 3200;
+    ws.curve = heavyCurve; ws.oversample = '4x';
+    // Cabinet simulation: bandpass around speaker mid-range
+    const cab = audioCtx.createBiquadFilter();
+    cab.type = 'bandpass'; cab.frequency.value = 2400; cab.Q.value = 0.5;
+    // Presence boost for bite
+    const pre = audioCtx.createBiquadFilter();
+    pre.type = 'peaking'; pre.frequency.value = 3800;
+    pre.gain.value = 5; pre.Q.value = 1.5;
     const g = audioCtx.createGain();
     g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(vol * 0.6, t + 0.015); // pick attack decay
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    ws.connect(lp); lp.connect(g); g.connect(master);
-    [rootHz, rootHz * 1.498, rootHz * 2].forEach(f => {
-      const osc = audioCtx.createOscillator();
-      osc.type = 'sawtooth'; osc.frequency.value = f;
-      osc.connect(ws);
-      osc.start(t); osc.stop(t + dur + 0.05);
+    ws.connect(cab); cab.connect(pre); pre.connect(g); g.connect(master);
+    // Root + perfect 5th, each spread across ±5 cent detuned pair
+    [rootHz, rootHz * 1.4983].forEach(freq => {
+      [-5, 0, 5].forEach(cents => {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq * Math.pow(2, cents / 1200);
+        osc.connect(ws);
+        osc.start(t); osc.stop(t + dur + 0.06);
+      });
     });
   }
 
-  // ── Lead riff note (single picked note) ───────────────────
-  function riff(freq, t, dur) {
+  // ── Lead guitar (singing single-note with sustain) ────────
+  function lead(freq, t, dur, vol) {
     const ws = audioCtx.createWaveShaper();
-    ws.curve = makeDistCurve(180);
-    ws.oversample = '2x';
-    const lp = audioCtx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 4500;
+    ws.curve = leadCurve; ws.oversample = '4x';
+    const cab = audioCtx.createBiquadFilter();
+    cab.type = 'bandpass'; cab.frequency.value = 3000; cab.Q.value = 0.6;
     const g = audioCtx.createGain();
-    g.gain.setValueAtTime(0.22, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.9);
-    ws.connect(lp); lp.connect(g); g.connect(master);
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sawtooth'; osc.frequency.value = freq;
-    osc.connect(ws);
-    osc.start(t); osc.stop(t + dur);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.005);    // sharp pick attack
+    g.gain.setValueAtTime(vol * 0.72, t + 0.025);      // decay to sustain level
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.92);
+    ws.connect(cab); cab.connect(g); g.connect(master);
+    // Slight chorus detune on lead too
+    [-3, 0, 3].forEach(cents => {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq * Math.pow(2, cents / 1200);
+      osc.connect(ws);
+      osc.start(t); osc.stop(t + dur + 0.04);
+    });
   }
 
-  // ── Song data ─────────────────────────────────────────────
-  // Classic rock key of E  (E2=82.41, A2=110, B2=123.47, D2=73.42)
-  const E = 82.41, A = 110.00, B = 123.47, D2 = 73.42;
+  // ── Song data — E minor, cinematic epic rock ──────────────
+  // Chord roots (guitar register): Em=82.41, C=130.81, G=98, D=146.83
+  const Em = 82.41, C3 = 130.81, G2 = 98.00, D3 = 146.83;
+  // Chord loop: Em | C | G | D
+  const chords = [Em, C3, G2, D3];
 
-  // 4-bar chord loop: E | E | A | B
-  const chords = [E, E, A, B];
-
-  // Bass walking line per chord (4 quarter notes each bar)
+  // Bass roots (one octave below)
   const bassLines = [
-    [E,      E*1.19, E*1.498, E*1.26],  // E bar  — E G# B Ab-ish
-    [E,      E*1.19, E*1.498, E*1.26],  // E bar
-    [A,      A*1.12, A*1.25,  A*1.5 ],  // A bar  — A B C# E
-    [B,      B*1.12, B*1.25,  B*1.5 ],  // B bar  — B C# D# F#
+    [82.41, 98.00, 110.00, 123.47],  // Em:  E2 G2 A2 B2
+    [65.41, 82.41, 98.00,  65.41 ],  // C:   C2 E2 G2 C2
+    [49.00, 61.74, 73.42,  98.00 ],  // G:   G1 B1 D2 G2
+    [73.42, 92.50, 110.00, 73.42 ],  // D:   D2 F#2 A2 D2
   ];
 
-  // Pentatonic E riff (8th notes, played over E bars)
-  // E3=164.81, G3=196, A3=220, B3=246.94, D4=293.66
-  const E3=164.81, G3=196, A3=220, B3=246.94, D4=293.66;
-  const riffPattern = [
-    [E3, 0],   [E3, 0.5], [G3, 1.0],
-    [A3, 1.5], [E3, 2.0], [D4, 2.5],
-    [E3, 3.0], [D4, 3.5],
+  // Epic lead melody (8th notes per bar)
+  // Note freq constants
+  const E4=329.63, D4=293.66, B3=246.94, A3=220.00,
+        G3=196.00, G4=392.00, F4=349.23, A4=440.00,
+        B4=493.88, D5=587.33, C4=261.63, E3=164.81;
+  const melodies = [
+    // Em bar — dramatic descending run
+    [{f:E4,b:0},{f:E4,b:0.5},{f:G4,b:1},{f:E4,b:1.5},
+     {f:D4,b:2},{f:B3,b:2.5},{f:A3,b:3},{f:G3,b:3.5}],
+    // C bar — soaring climb
+    [{f:C4,b:0},{f:E4,b:0.5},{f:G4,b:1},{f:A4,b:1.5},
+     {f:G4,b:2},{f:E4,b:2.5},{f:D4,b:3},{f:E4,b:3.5}],
+    // G bar — triumphant arpeggio
+    [{f:G3,b:0},{f:B3,b:0.5},{f:D4,b:1},{f:G4,b:1.5},
+     {f:D4,b:2},{f:B3,b:2.5},{f:G3,b:3},{f:B3,b:3.5}],
+    // D bar — building tension, ends on high E
+    [{f:D4,b:0},{f:F4,b:0.5},{f:A4,b:1},{f:D5,b:1.5},
+     {f:A4,b:2},{f:F4,b:2.5},{f:E4,b:3},{f:D4,b:3.5}],
   ];
 
   // ── Scheduler ─────────────────────────────────────────────
@@ -215,38 +276,37 @@ function startMusic() {
     if (!musicStarted) return;
     const t   = barStart;
     const ci  = barIdx % 4;
-    const chord = chords[ci];
+    const root = chords[ci];
 
-    // Rock drum beat: kick 1 & 3, snare 2 & 4, 8th hi-hats
-    kick(t);
-    kick(t + beat * 2);
-    kick(t + beat * 2.75);   // syncopated kick for extra drive
-    snare(t + beat);
-    snare(t + beat * 3);
+    // Crash cymbal every 4 bars (top of the loop)
+    if (barIdx % 4 === 0) crash(t);
+
+    // ── Drums — driving 140 BPM rock pattern ──
+    kick(t);                          // beat 1
+    kick(t + beat * 2);               // beat 3
+    kick(t + beat * 2.75);            // syncopated pre-4 kick
+    snare(t + beat);                  // beat 2
+    snare(t + beat * 3);              // beat 4
     for (let i = 0; i < 8; i++) {
-      hihat(t + i * beat * 0.5, i === 5); // open hat on the "and" of 3
+      hihat(t + i * beat * 0.5, i === 5); // open hat on "and of 3"
     }
 
-    // Bass line
-    bassLines[ci].forEach((hz, i) => bass(hz, t + beat * i, beat * 0.82));
+    // ── Bass ──
+    bassLines[ci].forEach((hz, i) => bass(hz, t + beat * i, beat * 0.84));
 
-    // Guitar: riff on E bars, power chord stabs on A and B bars
-    if (ci === 0 || ci === 1) {
-      riffPattern.forEach(([hz, offset]) => riff(hz, t + beat * offset, beat * 0.42));
-      // Rhythm chug under the riff
-      guitar(E, t,            beat * 0.4, 0.18);
-      guitar(E, t + beat * 2, beat * 0.4, 0.18);
-    } else {
-      // Chord stabs: downstroke on 1, upstroke "&2", downstroke on 3, 4
-      guitar(chord, t,                beat * 0.35, 0.28);
-      guitar(chord, t + beat * 0.5,  beat * 0.25, 0.18);
-      guitar(chord, t + beat * 2,    beat * 0.35, 0.28);
-      guitar(chord, t + beat * 3,    beat * 0.8,  0.22);
-    }
+    // ── Rhythm guitar — big chord on 1, chunky chug pattern ──
+    guitar(root, t,               beat * 1.7, 0.32); // downstroke beat 1
+    guitar(root, t + beat * 0.5,  beat * 0.3, 0.20); // upstroke "and 1"
+    guitar(root, t + beat * 2,    beat * 1.5, 0.30); // downstroke beat 3
+    guitar(root, t + beat * 3,    beat * 0.9, 0.26); // downstroke beat 4
+
+    // ── Lead melody ──
+    melodies[ci].forEach(n =>
+      lead(n.f, t + beat * n.b, beat * 0.46, 0.19)
+    );
 
     barStart += bar;
     barIdx++;
-    // Re-schedule just before the next bar starts
     musicNodes.scheduleTimeout = setTimeout(scheduleBar, (bar - 0.08) * 1000);
   }
 
